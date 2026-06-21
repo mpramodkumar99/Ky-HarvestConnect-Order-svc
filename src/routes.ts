@@ -4,6 +4,7 @@ import type { OrderService } from './service.js';
 import {
   placeOrderSchema, updateStatusSchema, cancelOrderSchema,
   paymentCallbackSchema, trackingUpdateSchema,
+  verifyDeliveryOtpSchema, agentUpdateStatusSchema,
 } from './schemas.js';
 import { AppError } from './errors.js';
 import type { OrderStatus } from './types.js';
@@ -36,13 +37,13 @@ export function registerOrderRoutes(app: FastifyInstance, service: OrderService)
     } catch (err) { return handleError(err, reply); }
   });
 
-  // GET /v1/orders?buyerId=&sellerId=&status=
+  // GET /v1/orders?buyerId=&sellerId=&agentId=&status=
   app.get('/v1/orders', async (request, reply) => {
     try {
-      const { buyerId, sellerId, status } = request.query as {
-        buyerId?: string; sellerId?: string; status?: string;
+      const { buyerId, sellerId, agentId, status } = request.query as {
+        buyerId?: string; sellerId?: string; agentId?: string; status?: string;
       };
-      const orders = await service.listOrders({ buyerId, sellerId, status: status as OrderStatus | undefined });
+      const orders = await service.listOrders({ buyerId, sellerId, agentId, status: status as OrderStatus | undefined });
       return reply.send({ success: true, data: orders, meta: { total: orders.length } });
     } catch (err) { return handleError(err, reply); }
   });
@@ -92,6 +93,26 @@ export function registerOrderRoutes(app: FastifyInstance, service: OrderService)
       const { id }  = request.params as { id: string };
       const body    = trackingUpdateSchema.parse(request.body);
       const updated = await service.setTrackingInfo(id, body.trackingId, body.estimatedDelivery);
+      return reply.send({ success: true, data: updated });
+    } catch (err) { return handleError(err, reply); }
+  });
+
+  // PATCH /v1/orders/:id  (agent app shorthand — accepts status + optional agentId)
+  app.patch('/v1/orders/:id', async (request, reply) => {
+    try {
+      const { id }  = request.params as { id: string };
+      const body    = agentUpdateStatusSchema.parse(request.body);
+      const updated = await service.updateStatus(id, body.status, body.reason, body.agentId);
+      return reply.send({ success: true, data: updated });
+    } catch (err) { return handleError(err, reply); }
+  });
+
+  // POST /v1/orders/:id/verify-delivery  (agent verifies buyer OTP before marking delivered)
+  app.post('/v1/orders/:id/verify-delivery', async (request, reply) => {
+    try {
+      const { id }  = request.params as { id: string };
+      const body    = verifyDeliveryOtpSchema.parse(request.body);
+      const updated = await service.verifyDelivery(id, body.otp);
       return reply.send({ success: true, data: updated });
     } catch (err) { return handleError(err, reply); }
   });

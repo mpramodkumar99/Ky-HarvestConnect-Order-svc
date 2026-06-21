@@ -4,7 +4,7 @@ import type { Order, OrderStatus } from './types.js';
 export interface OrderRepository {
   create(data: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>): Promise<Order>;
   findById(id: string): Promise<Order | null>;
-  findAll(filters?: { buyerId?: string; sellerId?: string; status?: OrderStatus }): Promise<Order[]>;
+  findAll(filters?: { buyerId?: string; sellerId?: string; agentId?: string; status?: OrderStatus }): Promise<Order[]>;
   update(id: string, patch: Partial<Order>): Promise<Order | null>;
   countByBuyer(buyerId: string): Promise<number>;
 }
@@ -25,10 +25,11 @@ export class InMemoryOrderRepository implements OrderRepository {
     return this.store.get(id) ?? null;
   }
 
-  async findAll(filters?: { buyerId?: string; sellerId?: string; status?: OrderStatus }): Promise<Order[]> {
+  async findAll(filters?: { buyerId?: string; sellerId?: string; agentId?: string; status?: OrderStatus }): Promise<Order[]> {
     let results = [...this.store.values()];
     if (filters?.buyerId)  results = results.filter(o => o.buyerId === filters.buyerId);
     if (filters?.sellerId) results = results.filter(o => o.items.some(i => i.sellerId === filters.sellerId));
+    if (filters?.agentId)  results = results.filter(o => o.agentId === filters.agentId);
     if (filters?.status)   results = results.filter(o => o.status === filters.status);
     return results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
