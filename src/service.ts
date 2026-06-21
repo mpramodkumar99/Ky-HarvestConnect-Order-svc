@@ -68,11 +68,11 @@ export class OrderService {
     return order;
   }
 
-  async listOrders(filters?: { buyerId?: string; sellerId?: string; status?: OrderStatus }): Promise<Order[]> {
+  async listOrders(filters?: { buyerId?: string; sellerId?: string; agentId?: string; status?: OrderStatus }): Promise<Order[]> {
     return this.repo.findAll(filters);
   }
 
-  async updateStatus(id: string, newStatus: OrderStatus, reason?: string): Promise<Order> {
+  async updateStatus(id: string, newStatus: OrderStatus, reason?: string, agentId?: string): Promise<Order> {
     const order = await this.repo.findById(id);
     if (!order) throw new NotFoundError(`Order ${id} not found`);
     if (!canTransition(order.status, newStatus)) {
@@ -82,13 +82,34 @@ export class OrderService {
     const patch: Partial<Order> = { status: newStatus };
     if (newStatus === 'cancelled')  { patch.cancelledAt = new Date().toISOString(); patch.cancelReason = reason; }
     if (newStatus === 'delivered')  { patch.deliveredAt = new Date().toISOString(); }
+    if (newStatus === 'dispatched') {
+      // Generate 4-digit delivery OTP — sent to buyer to confirm receipt
+      patch.deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
+    }
+    if (agentId) patch.agentId = agentId;
 
     const updated = await this.repo.update(id, patch);
     if (!updated) throw new NotFoundError(`Order ${id} not found`);
 
     this.notificationPort.notify(`order_${newStatus}`, order.buyerId, {
       orderId: id, status: newStatus,
+      ...(patch.deliveryOtp ? { deliveryOtp: patch.deliveryOtp } : {}),
     }).catch(() => {});
+
+    return updated;
+  }
+
+  async verifyDelivery(id: string, otp: string): Promise<Order> {
+    const order = await this.repo.findById(id);
+    if (!order) throw new NotFoundError(`Order ${id} not found`);
+    if (!order.deliveryOtp) throw new BadRequestError('Delivery OTP not generated for this order');
+    if (order.deliveryOtp !== otp) throw new BadRequestError('Invalid delivery OTP');
+
+    const patch: Partial<Order> = { status: 'delivered', deliveredAt: new Date().toISOString() };
+    const updated = await this.repo.update(id, patch);
+    if (!updated) throw new NotFoundError(`Order ${id} not found`);
+
+    this.notificationPort.notify('order_delivered', order.buyerId, { orderId: id }).catch(() => {});
 
     return updated;
   }

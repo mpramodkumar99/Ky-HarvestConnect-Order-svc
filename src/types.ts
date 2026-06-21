@@ -54,6 +54,8 @@ export interface Order {
   cancelledAt?:    string;
   cancelReason?:   string;
   deliveredAt?:    string;
+  deliveryOtp?:    string;
+  agentId?:        string;
   createdAt:       string;
   updatedAt:       string;
 }

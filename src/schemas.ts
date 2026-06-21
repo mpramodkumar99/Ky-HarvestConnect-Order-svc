@@ -51,3 +51,13 @@ export const trackingUpdateSchema = z.object({
   trackingId:        z.string().min(1),
   estimatedDelivery: z.string().optional(),
 });
+
+export const verifyDeliveryOtpSchema = z.object({
+  otp: z.string().length(4, 'OTP must be exactly 4 digits').regex(/^\d{4}$/, 'OTP must be numeric'),
+});
+
+export const agentUpdateStatusSchema = z.object({
+  status:  z.enum(['confirmed','processing','dispatched','in_transit','delivered','cancelled','refund_initiated','refunded']),
+  agentId: z.string().optional(),
+  reason:  z.string().optional(),
+});
