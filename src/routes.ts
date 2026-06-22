@@ -27,12 +27,12 @@ function handleError(err: unknown, reply: FastifyReply) {
 
 export function registerOrderRoutes(app: FastifyInstance, service: OrderService) {
 
-  // POST /v1/orders
+  // POST /v1/orders — returns an array (one sub-order per seller)
   app.post('/v1/orders', async (request, reply) => {
     try {
-      const body  = placeOrderSchema.parse(request.body);
-      const order = await service.placeOrder(body);
-      return reply.status(201).send({ success: true, data: order });
+      const body   = placeOrderSchema.parse(request.body);
+      const orders = await service.placeOrder(body);
+      return reply.status(201).send({ success: true, data: orders });
     } catch (err) { return handleError(err, reply); }
   });
 
@@ -93,6 +93,25 @@ export function registerOrderRoutes(app: FastifyInstance, service: OrderService)
       const body    = trackingUpdateSchema.parse(request.body);
       const updated = await service.setTrackingInfo(id, body.trackingId, body.estimatedDelivery);
       return reply.send({ success: true, data: updated });
+    } catch (err) { return handleError(err, reply); }
+  });
+
+  // POST /v1/orders/:id/return  (buyer requests return within window)
+  app.post('/v1/orders/:id/return', async (request, reply) => {
+    try {
+      const { id }  = request.params as { id: string };
+      const { reason } = (request.body ?? {}) as { reason?: string };
+      const updated = await service.requestReturn(id, reason ?? 'No reason provided');
+      return reply.send({ success: true, data: updated });
+    } catch (err) { return handleError(err, reply); }
+  });
+
+  // GET /v1/orders/:id/invoice
+  app.get('/v1/orders/:id/invoice', async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const data   = await service.getInvoiceData(id);
+      return reply.send({ success: true, data });
     } catch (err) { return handleError(err, reply); }
   });
 }

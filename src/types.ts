@@ -1,10 +1,14 @@
 export type OrderStatus =
   | 'pending_payment'    // created, awaiting payment confirmation
   | 'confirmed'          // payment success or COD — seller can see order
-  | 'processing'         // seller accepted and is preparing
+  | 'processing'         // seller accepted
+  | 'packing'            // seller actively packing the order
   | 'dispatched'         // handed to logistics
   | 'in_transit'         // logistics picked up
-  | 'delivered'          // buyer confirmed delivery
+  | 'delivered'          // delivered to buyer
+  | 'return_requested'   // buyer requested return within window
+  | 'return_accepted'    // seller accepted the return
+  | 'return_rejected'    // seller rejected the return
   | 'cancelled'          // cancelled before dispatch
   | 'refund_initiated'   // post-payment cancellation
   | 'refunded';          // money returned
@@ -51,9 +55,14 @@ export interface Order {
   status:          OrderStatus;
   trackingId?:     string;
   estimatedDelivery?: string;
-  cancelledAt?:    string;
-  cancelReason?:   string;
-  deliveredAt?:    string;
-  createdAt:       string;
-  updatedAt:       string;
+  cancelledAt?:         string;
+  cancelReason?:        string;
+  packedAt?:            string;
+  deliveredAt?:         string;
+  returnWindowDays:     number;          // days buyer can request a return (default 7)
+  returnWindowClosedAt?: string;         // ISO — when window expires
+  returnRequestedAt?:   string;
+  returnReason?:        string;
+  createdAt:            string;
+  updatedAt:            string;
 }

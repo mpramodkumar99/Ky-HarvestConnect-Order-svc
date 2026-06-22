@@ -63,6 +63,7 @@ export class InMemoryOrderRepository implements OrderRepository {
         subtotal: 55500, deliveryFee: 4000, discount: 5000, total: 54500,
         paymentMethod: 'upi', paymentId: 'pay-mock-001',
         status: 'delivered', deliveredAt: '2026-06-10T14:00:00.000Z',
+        returnWindowDays: 7, returnWindowClosedAt: '2026-06-17T14:00:00.000Z',
         createdAt: '2026-06-09T10:00:00.000Z', updatedAt: '2026-06-10T14:00:00.000Z',
       },
       {
@@ -75,6 +76,7 @@ export class InMemoryOrderRepository implements OrderRepository {
         subtotal: 349900, deliveryFee: 4000, discount: 0, total: 353900,
         paymentMethod: 'card', paymentId: 'pay-mock-002',
         status: 'in_transit', trackingId: 'HC2026000001', estimatedDelivery: '2026-06-16',
+        returnWindowDays: 7,
         createdAt: '2026-06-12T08:00:00.000Z', updatedAt: '2026-06-13T10:00:00.000Z',
       },
       {
@@ -87,6 +89,7 @@ export class InMemoryOrderRepository implements OrderRepository {
         subtotal: 44000, deliveryFee: 4000, discount: 0, total: 48000,
         paymentMethod: 'cod',
         status: 'processing',
+        returnWindowDays: 7,
         createdAt: '2026-06-13T06:00:00.000Z', updatedAt: '2026-06-13T09:00:00.000Z',
       },
     ];

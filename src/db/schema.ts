@@ -1,0 +1,30 @@
+import { pgTable, text, integer, jsonb, timestamp } from 'drizzle-orm/pg-core';
+import type { OrderItem, DeliveryAddress } from '../types.js';
+
+export const orders = pgTable('orders', {
+  id:                text('id').primaryKey(),
+  buyerId:           text('buyer_id').notNull(),
+  buyerName:         text('buyer_name').notNull(),
+  buyerPhone:        text('buyer_phone').notNull(),
+  items:             jsonb('items').notNull().$type<OrderItem[]>(),
+  deliveryAddress:   jsonb('delivery_address').notNull().$type<DeliveryAddress>(),
+  subtotal:          integer('subtotal').notNull(),
+  deliveryFee:       integer('delivery_fee').notNull(),
+  discount:          integer('discount').notNull(),
+  total:             integer('total').notNull(),
+  paymentMethod:     text('payment_method').notNull(),
+  paymentId:         text('payment_id'),
+  status:            text('status').notNull(),
+  trackingId:        text('tracking_id'),
+  estimatedDelivery: text('estimated_delivery'),
+  cancelledAt:          text('cancelled_at'),
+  cancelReason:         text('cancel_reason'),
+  packedAt:             text('packed_at'),
+  deliveredAt:          text('delivered_at'),
+  returnWindowDays:     integer('return_window_days').notNull().default(7),
+  returnWindowClosedAt: text('return_window_closed_at'),
+  returnRequestedAt:    text('return_requested_at'),
+  returnReason:         text('return_reason'),
+  createdAt:            timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:            timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

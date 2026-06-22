@@ -3,13 +3,16 @@ import type { NotificationPort } from './ports.js';
 import type { Order, OrderStatus, PaymentMethod } from './types.js';
 import { NotFoundError, BadRequestError } from './errors.js';
 
-// Enforce valid state-machine transitions — business rule lives here, not in routes.
 const TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   pending_payment:  ['confirmed', 'cancelled'],
   confirmed:        ['processing', 'cancelled'],
-  processing:       ['dispatched'],
+  processing:       ['packing', 'cancelled'],
+  packing:          ['dispatched'],
   dispatched:       ['in_transit'],
   in_transit:       ['delivered', 'refund_initiated'],
+  delivered:        ['return_requested'],
+  return_requested: ['return_accepted', 'return_rejected'],
+  return_accepted:  ['refund_initiated'],
   cancelled:        ['refunded'],
   refund_initiated: ['refunded'],
 };
@@ -37,29 +40,57 @@ export class OrderService {
     private notificationPort:  NotificationPort,
   ) {}
 
-  async placeOrder(input: PlaceOrderInput): Promise<Order> {
-    const items      = input.items.map(i => ({ ...i, totalPrice: i.unitPrice * i.quantity }));
-    const subtotal   = items.reduce((s, i) => s + i.totalPrice, 0);
-    const deliveryFee = 4000; // ₹40 flat
-    const count      = await this.repo.countByBuyer(input.buyerId);
-    const discount   = count === 0 ? 5000 : 0; // ₹50 first-order discount
-    const total      = subtotal + deliveryFee - discount;
+  async placeOrder(input: PlaceOrderInput): Promise<Order[]> {
+    // Group items by seller — each seller gets their own isolated order record.
+    // This prevents one seller's status changes from being visible to other sellers.
+    const sellerGroups = new Map<string, typeof input.items>();
+    for (const item of input.items) {
+      const group = sellerGroups.get(item.sellerId) ?? [];
+      group.push(item);
+      sellerGroups.set(item.sellerId, group);
+    }
 
-    // COD skips pending_payment state — confirms immediately
-    const status: OrderStatus = input.paymentMethod === 'cod' ? 'confirmed' : 'pending_payment';
+    const isFirstOrder = (await this.repo.countByBuyer(input.buyerId)) === 0;
+    const status: OrderStatus = (input.paymentMethod === 'cod' || input.paymentMethod === 'wallet')
+      ? 'confirmed'
+      : 'pending_payment';
 
-    const order = await this.repo.create({
-      buyerId: input.buyerId, buyerName: input.buyerName, buyerPhone: input.buyerPhone,
-      items, deliveryAddress: input.deliveryAddress,
-      subtotal, deliveryFee, discount, total,
-      paymentMethod: input.paymentMethod, status,
-    });
+    const created: Order[] = [];
+    let firstSubOrder = true;
 
+    for (const [sellerId, rawItems] of sellerGroups) {
+      const items       = rawItems.map(i => ({ ...i, totalPrice: i.unitPrice * i.quantity }));
+      const subtotal    = items.reduce((s, i) => s + i.totalPrice, 0);
+      // Delivery fee (₹40) and first-order discount (₹50) apply only to the first sub-order
+      const deliveryFee = firstSubOrder ? 4000 : 0;
+      const discount    = firstSubOrder && isFirstOrder ? 5000 : 0;
+      const total       = subtotal + deliveryFee - discount;
+      firstSubOrder     = false;
+
+      const order = await this.repo.create({
+        buyerId: input.buyerId, buyerName: input.buyerName, buyerPhone: input.buyerPhone,
+        items, deliveryAddress: input.deliveryAddress,
+        subtotal, deliveryFee, discount, total,
+        paymentMethod: input.paymentMethod, status,
+        returnWindowDays: 7,
+      });
+
+      this.notificationPort.notify('order_received', sellerId, {
+        orderId:   order.id,
+        buyerName: input.buyerName,
+        itemCount: String(items.length),
+        total:     String(total),
+      }).catch(() => {});
+
+      created.push(order);
+    }
+
+    const grandTotal = created.reduce((s, o) => s + o.total, 0);
     this.notificationPort.notify('order_placed', input.buyerId, {
-      orderId: order.id, total: String(total),
+      orderId: created[0]?.id ?? '', total: String(grandTotal),
     }).catch(() => {});
 
-    return order;
+    return created;
   }
 
   async getOrder(id: string): Promise<Order> {
@@ -80,8 +111,15 @@ export class OrderService {
     }
 
     const patch: Partial<Order> = { status: newStatus };
-    if (newStatus === 'cancelled')  { patch.cancelledAt = new Date().toISOString(); patch.cancelReason = reason; }
-    if (newStatus === 'delivered')  { patch.deliveredAt = new Date().toISOString(); }
+    const now = new Date().toISOString();
+    if (newStatus === 'cancelled')         { patch.cancelledAt = now; patch.cancelReason = reason; }
+    if (newStatus === 'packing')           { patch.packedAt = now; }
+    if (newStatus === 'delivered')         {
+      patch.deliveredAt = now;
+      const windowClose = new Date(Date.now() + order.returnWindowDays * 86_400_000);
+      patch.returnWindowClosedAt = windowClose.toISOString();
+    }
+    if (newStatus === 'return_requested')  { patch.returnRequestedAt = now; patch.returnReason = reason; }
 
     const updated = await this.repo.update(id, patch);
     if (!updated) throw new NotFoundError(`Order ${id} not found`);
@@ -120,5 +158,32 @@ export class OrderService {
     const updated = await this.repo.update(id, { trackingId, estimatedDelivery });
     if (!updated) throw new NotFoundError(`Order ${id} not found`);
     return updated;
+  }
+
+  async requestReturn(id: string, reason: string): Promise<Order> {
+    const order = await this.repo.findById(id);
+    if (!order) throw new NotFoundError(`Order ${id} not found`);
+    if (order.status !== 'delivered') {
+      throw new BadRequestError('Returns can only be requested for delivered orders');
+    }
+    if (order.returnWindowClosedAt && new Date() > new Date(order.returnWindowClosedAt)) {
+      throw new BadRequestError('Return window has closed for this order');
+    }
+    return this.updateStatus(id, 'return_requested', reason);
+  }
+
+  async getInvoiceData(id: string): Promise<{
+    invoiceNumber: string;
+    order: Order;
+    issuedAt: string;
+    sellerGstin?: string;
+  }> {
+    const order = await this.repo.findById(id);
+    if (!order) throw new NotFoundError(`Order ${id} not found`);
+    return {
+      invoiceNumber: `INV-${id.slice(-8).toUpperCase()}`,
+      order,
+      issuedAt: order.deliveredAt ?? order.updatedAt,
+    };
   }
 }

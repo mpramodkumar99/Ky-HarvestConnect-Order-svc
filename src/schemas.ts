@@ -33,7 +33,21 @@ export const placeOrderSchema = z.object({
 });
 
 export const updateStatusSchema = z.object({
-  status: z.enum(['confirmed','processing','dispatched','in_transit','delivered','cancelled','refund_initiated','refunded']),
+  status: z.enum([
+    'pending_payment',
+    'confirmed',
+    'processing',
+    'packing',
+    'dispatched',
+    'in_transit',
+    'delivered',
+    'return_requested',
+    'return_accepted',
+    'return_rejected',
+    'cancelled',
+    'refund_initiated',
+    'refunded',
+  ]),
   reason: z.string().optional(),
 });
 
